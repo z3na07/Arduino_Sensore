@@ -1,33 +1,41 @@
 #include <SoftwareSerial.h>
 #include <DFRobotDFPlayerMini.h>
 
-
-SoftwareSerial mp3Serial(2, 3); // RX, TX per la comunicazione con DFPlayer Mini
-DFRobotDFPlayerMini myDFPlayer; 
+SoftwareSerial mp3Serial(2, 3); // RX, TX
+DFRobotDFPlayerMini myDFPlayer;
 
 const int trigPin = 9;
 const int echoPin = 10;
-bool isPlaying = false;  // Variabile di stato per tracciare se un file è in riproduzione
+
+bool primoMessaggioRiprodotto = false;
+bool portaAperta = false;
+int conteggioSecondiMessaggi = 0;
+unsigned long tempoUltimoMessaggio = 0;
+unsigned long tempoChiusuraPorta = 0;
+bool inAttesaChiusura = false;
+
+const unsigned long intervalloMessaggio = 30000;   // 30 secondi
+const unsigned long intervalloReset = 180000;      // 3 minuti
 
 void setup() {
   Serial.begin(9600);
-  mp3Serial.begin(9600);  // Inizializza SoftwareSerial per la comunicazione con DFPlayer Mini
+  mp3Serial.begin(9600);
   pinMode(trigPin, OUTPUT);
   pinMode(echoPin, INPUT);
-  
-  /*if (!myDFPlayer.begin(mp3Serial)) {
-    Serial.println("Errore di comunicazione con DFPlayer Mini.");
-    while (true);  // Blocca il programma se non riesce a connettersi
-  }*/
-  myDFPlayer.begin(mp3Serial);
 
+  if (!myDFPlayer.begin(mp3Serial)) {
+    Serial.println("Errore DFPlayer");
+    while (true);
+  }
+
+  myDFPlayer.volume(30);
   Serial.println("Sistema pronto.");
 }
 
 void loop() {
   long duration, distance;
 
-  // Invia il pulso per misurare la distanza
+  // Misura distanza
   digitalWrite(trigPin, LOW);
   delayMicroseconds(2);
   digitalWrite(trigPin, HIGH);
@@ -40,18 +48,54 @@ void loop() {
   Serial.print("Distanza: ");
   Serial.println(distance);
 
-  if (distance > 20) {  // Se la distanza è maggiore di 20 cm
-    if (!isPlaying) {  // Verifica se non sta già riproducendo un file
-      myDFPlayer.volume(30);  
-      myDFPlayer.play(1);  // Riproduce il file 0001.mp3
-      isPlaying = true;  // Imposta la variabile di stato a true quando inizia la riproduzione
-      Serial.println("La porta è aperta.");
-      delay(1000);  // Aggiungi un ritardo per dare tempo alla riproduzione
+  unsigned long ora = millis();
+
+  // --- Porta Aperta ---
+  if (distance > 20) {
+    if (!portaAperta) {
+      portaAperta = true;
+      Serial.println("Porta aperta.");
     }
-  } else {
-    isPlaying = false;  // Se la distanza è minore o uguale a 20 cm, resettiamo lo stato
-    Serial.println("Distanza sicura");
+
+    if (!primoMessaggioRiprodotto) {
+      myDFPlayer.play(1);  // Primo messaggio
+      Serial.println("Riprodotto messaggio 1");
+      primoMessaggioRiprodotto = true;
+      tempoUltimoMessaggio = ora;
+      conteggioSecondiMessaggi = 0;
+    }
+
+    // Riproduzione dei messaggi ripetuti ogni 30s (massimo 2 volte)
+    if (primoMessaggioRiprodotto && conteggioSecondiMessaggi < 2 && ora - tempoUltimoMessaggio >= intervalloMessaggio) {
+      myDFPlayer.play(2);  // Secondo messaggio
+      conteggioSecondiMessaggi++;
+      tempoUltimoMessaggio = ora;
+      Serial.print("Riprodotto messaggio 2, volta n°");
+      Serial.println(conteggioSecondiMessaggi);
+    }
+
+    // Se la porta è ancora aperta e ha raggiunto il massimo dei messaggi, aspetta chiusura
+    if (conteggioSecondiMessaggi >= 2) {
+      inAttesaChiusura = true;
+    }
   }
 
-  delay(1000);  // Attende mezzo secondo prima di eseguire una nuova lettura
+  // --- Porta Chiusa ---
+  else {
+    if (portaAperta) {
+      portaAperta = false;
+      tempoChiusuraPorta = ora;
+      Serial.println("Porta chiusa.");
+    }
+
+    // Se in attesa di chiusura e la porta resta chiusa per almeno 3 minuti, resetta
+    if (inAttesaChiusura && (ora - tempoChiusuraPorta >= intervalloReset)) {
+      Serial.println("Sistema resettato dopo 3 minuti di porta chiusa.");
+      primoMessaggioRiprodotto = false;
+      conteggioSecondiMessaggi = 0;
+      inAttesaChiusura = false;
+    }
+  }
+
+  delay(500);
 }
