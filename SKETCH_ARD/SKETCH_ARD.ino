@@ -7,15 +7,17 @@ DFRobotDFPlayerMini myDFPlayer;
 const int trigPin = 9;
 const int echoPin = 10;
 
-bool primoMessaggioRiprodotto = false;
 bool portaAperta = false;
 int conteggioSecondiMessaggi = 0;
 unsigned long tempoUltimoMessaggio = 0;
 unsigned long tempoChiusuraPorta = 0;
 bool inAttesaChiusura = false;
+unsigned long tempoUltimaAperturaPorta = 0;
+bool primoMessaggioRiprodotto = false; // Dichiarato qui
 
-const unsigned long intervalloMessaggio = 30000;   // 30 secondi
+const unsigned long intervalloMessaggio = 10000;   // 10 secondi tra i messaggi
 const unsigned long intervalloReset = 180000;      // 3 minuti
+const unsigned long intervalloTraAperture = 180000; // 3 minuti tra aperture successive
 
 void setup() {
   Serial.begin(9600);
@@ -55,23 +57,25 @@ void loop() {
     if (!portaAperta) {
       portaAperta = true;
       Serial.println("Porta aperta.");
+
+      // Verifica se è passato più di 3 minuti dall'ultima apertura
+      if (ora - tempoUltimaAperturaPorta >= intervalloTraAperture) {
+        // Se è passato più di 3 minuti, resetta e riproduci il primo messaggio
+        primoMessaggioRiprodotto = false;
+        conteggioSecondiMessaggi = 0;
+        Serial.println("Ripristino stato dopo 3 minuti senza aperture.");
+      }
+      tempoUltimaAperturaPorta = ora;
     }
 
-    if (!primoMessaggioRiprodotto) {
-      myDFPlayer.play(1);  // Primo messaggio
-      Serial.println("Riprodotto messaggio 1");
-      primoMessaggioRiprodotto = true;
-      tempoUltimoMessaggio = ora;
-      conteggioSecondiMessaggi = 0;
-    }
-
-    // Riproduzione dei messaggi ripetuti ogni 30s (massimo 2 volte)
-    if (primoMessaggioRiprodotto && conteggioSecondiMessaggi < 2 && ora - tempoUltimoMessaggio >= intervalloMessaggio) {
-      myDFPlayer.play(2);  // Secondo messaggio
+    if (conteggioSecondiMessaggi < 2 && ora - tempoUltimoMessaggio >= intervalloMessaggio) {
+      // Riproduzione messaggio casuale
+      int messaggioCasuale = random(1, 6); // Scegli un numero tra 1 e 5
+      myDFPlayer.play(messaggioCasuale);  // Riproduci messaggio casuale
+      Serial.print("Riprodotto messaggio n°");
+      Serial.println(messaggioCasuale);
       conteggioSecondiMessaggi++;
       tempoUltimoMessaggio = ora;
-      Serial.print("Riprodotto messaggio 2, volta n°");
-      Serial.println(conteggioSecondiMessaggi);
     }
 
     // Se la porta è ancora aperta e ha raggiunto il massimo dei messaggi, aspetta chiusura
